@@ -1,0 +1,2038 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FTL: True 6-DOF, Zero-Alloc & 5-Cosmic Zone Physics Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; touch-action: none; }
+    body {
+      overflow: hidden;
+      background: #010308;
+      font-family: 'Segoe UI', Consolas, monospace;
+      color: #00f3ff;
+    }
+    canvas#game-canvas { display: block; width: 100vw; height: 100vh; }
+
+    #warp-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+      background: radial-gradient(circle at center, transparent 40%, rgba(0, 243, 255, 0.22) 80%, rgba(188, 19, 254, 0.45) 100%);
+      box-shadow: inset 0 0 120px rgba(0, 243, 255, 0.5);
+      z-index: 4;
+    }
+
+    #title-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: radial-gradient(circle at center, rgba(4, 22, 48, 0.92) 0%, rgba(1, 3, 10, 0.98) 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    .title-card {
+      max-width: 760px;
+      width: 95%;
+      background: rgba(3, 14, 30, 0.95);
+      border: 1.5px solid #00f3ff;
+      box-shadow: 0 0 45px rgba(0, 243, 255, 0.3);
+      border-radius: 10px;
+      padding: 22px 26px;
+    }
+    .title-card h1 {
+      font-size: 20px;
+      letter-spacing: 2.5px;
+      color: #ffffff;
+      text-shadow: 0 0 14px #00f3ff;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .title-card h3 {
+      font-size: 11.5px;
+      color: #00ffcc;
+      letter-spacing: 1.4px;
+      margin-bottom: 14px;
+      text-transform: uppercase;
+    }
+    .title-specs {
+      text-align: left;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #cceeff;
+      background: rgba(0, 30, 60, 0.45);
+      border: 1px solid rgba(0, 243, 255, 0.3);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+    }
+    .launch-btn {
+      background: linear-gradient(90deg, #00f3ff, #00ff88);
+      border: none;
+      color: #010814;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 1.8px;
+      padding: 11px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      text-transform: uppercase;
+      box-shadow: 0 0 22px rgba(0, 243, 255, 0.6);
+    }
+
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 10px;
+      z-index: 10;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .panel {
+      background: rgba(3, 13, 28, 0.88);
+      border: 1px solid rgba(0, 243, 255, 0.45);
+      box-shadow: 0 0 16px rgba(0, 243, 255, 0.14);
+      border-radius: 6px;
+      padding: 8px 11px;
+      backdrop-filter: blur(5px);
+    }
+
+    .title-box h1 {
+      font-size: 13px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #ffffff;
+      text-shadow: 0 0 8px #00f3ff;
+      margin-bottom: 2px;
+    }
+    .title-box p { font-size: 9.8px; color: #7ce7ff; }
+
+    .cosmic-bar {
+      pointer-events: auto;
+      display: flex;
+      gap: 4px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+    }
+    .zone-btn {
+      background: rgba(0, 28, 56, 0.9);
+      border: 1px solid rgba(0, 243, 255, 0.5);
+      color: #b8f2ff;
+      padding: 3px 6px;
+      font-size: 9px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .zone-btn.active {
+      background: linear-gradient(90deg, #00f3ff, #00ff88);
+      color: #010612;
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, auto);
+      gap: 2.5px 12px;
+      font-size: 10px;
+    }
+    .label { color: #7ca9c4; }
+    .val { color: #00ffcc; font-weight: bold; }
+    .val.warn { color: #ffae00; }
+    .val.crit { color: #ff3366; }
+
+    #eq-panel {
+      position: fixed;
+      top: 145px;
+      left: 10px;
+      width: 330px;
+      font-size: 10px;
+      line-height: 1.4;
+      z-index: 12;
+    }
+    #eq-panel h2 {
+      font-size: 10.5px;
+      color: #00ffcc;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .eq-row {
+      margin-bottom: 4px;
+      padding-bottom: 3px;
+      border-bottom: 1px solid rgba(0, 243, 255, 0.15);
+    }
+    .eq-formula { color: #ffffff; font-family: Consolas, monospace; font-size: 9.5px; }
+    .eq-live { color: #ffea00; font-weight: bold; }
+
+    .radar-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px;
+    }
+    .radar-title { font-size: 8.5px; letter-spacing: 1px; color: #7ce7ff; margin-bottom: 2px; }
+    #radar-canvas {
+      width: 112px; height: 112px;
+      border-radius: 50%;
+      border: 1.5px solid #00f3ff;
+      background: radial-gradient(circle, rgba(0, 45, 70, 0.65) 0%, rgba(2, 8, 18, 0.92) 100%);
+    }
+    .radar-legend { display: flex; gap: 5px; font-size: 8px; margin-top: 3px; color: #b0e8ff; }
+    .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 2px; }
+
+    #center-hud {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+      width: 90%;
+      max-width: 640px;
+    }
+    .reticle {
+      width: 64px; height: 64px;
+      border: 1.5px dashed rgba(0, 243, 255, 0.65);
+      border-radius: 50%;
+      margin: 0 auto;
+      position: relative;
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    .reticle::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 6px; height: 6px;
+      background: #00ffcc;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #countdown-banner {
+      margin-top: 8px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #00ffcc;
+      text-shadow: 0 0 12px #00f3ff;
+      min-height: 18px;
+    }
+    #alert-banner {
+      margin-top: 4px;
+      font-size: 10.5px;
+      font-weight: bold;
+      letter-spacing: 0.8px;
+      color: #ffea00;
+      background: rgba(2, 8, 20, 0.84);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+
+    /* DUAL ANALOG TOUCH JOYSTICKS + VERTICAL HEAVE BUTTONS */
+    .joystick-zone {
+      pointer-events: auto;
+      position: fixed;
+      bottom: 95px;
+      width: 114px;
+      height: 114px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(0, 243, 255, 0.45);
+      background: radial-gradient(circle, rgba(0, 40, 75, 0.45) 0%, rgba(2, 10, 24, 0.75) 100%);
+      z-index: 25;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #joy-left { left: 14px; }
+    #joy-right { right: 14px; }
+    .joy-knob {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #00ffcc 0%, #0088aa 100%);
+      border: 1.5px solid #ffffff;
+      box-shadow: 0 0 12px #00f3ff;
+      position: absolute;
+      transform: translate(0px, 0px);
+      pointer-events: none;
+    }
+    .joy-label {
+      position: absolute;
+      bottom: -17px;
+      font-size: 8.5px;
+      color: #7ce7ff;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* VERTICAL 6-DOF HEAVE THRUSTER PAD (R / F) */
+    .heave-pad {
+      pointer-events: auto;
+      position: fixed;
+      bottom: 110px;
+      left: 140px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 25;
+    }
+    .heave-btn {
+      width: 44px;
+      height: 36px;
+      background: rgba(0, 38, 72, 0.88);
+      border: 1px solid #00f3ff;
+      color: #00ffcc;
+      font-size: 9.5px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .heave-btn:active { background: #00f3ff; color: #010814; }
+
+    .bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .bar-group { width: 280px; max-width: 100%; }
+    .bar-item { margin-bottom: 4px; }
+    .bar-header { display: flex; justify-content: space-between; font-size: 9.5px; margin-bottom: 2px; }
+    .bar-track { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; transition: width 0.08s; }
+    #cap-bar { background: linear-gradient(90deg, #00f3ff, #00ff88); width: 75%; }
+    #conduit-bar { background: linear-gradient(90deg, #00e1ff, #bc13fe); width: 100%; }
+    #boss-bar { background: linear-gradient(90deg, #ff0044, #ff9900); width: 100%; }
+    #sch-bar { background: linear-gradient(90deg, #00ffcc, #ff3366); width: 20%; }
+    #hull-bar { background: linear-gradient(90deg, #ff3366, #00ffcc); width: 100%; }
+
+    .controls-panel {
+      pointer-events: auto;
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      max-width: 720px;
+      justify-content: flex-end;
+    }
+    .btn {
+      background: rgba(0, 36, 70, 0.88);
+      border: 1px solid #00f3ff;
+      color: #e0ffff;
+      padding: 4.5px 6.5px;
+      font-family: inherit;
+      font-size: 9px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+    .btn:hover, .btn.active {
+      background: #00f3ff;
+      color: #020813;
+      box-shadow: 0 0 10px #00f3ff;
+    }
+
+    @media (max-width: 860px) {
+      #eq-panel { display: none; }
+      .telemetry-grid { font-size: 9px; }
+      .bar-group { width: 46%; }
+      .controls-panel { max-width: 52%; }
+      .joystick-zone { width: 92px; height: 92px; bottom: 110px; }
+      .joy-knob { width: 34px; height: 34px; }
+      .heave-pad { left: 114px; bottom: 118px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="warp-overlay"></div>
+
+  <!-- TITLE SCREEN -->
+  <div id="title-screen">
+    <div class="title-card">
+      <h1>Hacking the Light Barrier — v2.0 Audited Engine</h1>
+      <h3>True 6-DOF Newtonian/Relativistic Physics, Zero-Alloc &amp; 5-Cosmic Scale Simulator</h3>
+      <div class="title-specs">
+        <div>• <strong>Fix 1 (Portal Cooldown &amp; Relocation):</strong> Crossing the 920m throat relocates the ring 1,800m ahead with a 3s lock cooldown—zero infinite jump loops.</div>
+        <div>• <strong>Fix 2 (Honest Local vs. ADM Metric Velocity):</strong> Displays true local frame speed (`m/s`) alongside contracted ADM metric displacement (`c`).</div>
+        <div>• <strong>Fix 3 (Real Mass-Nullification $F = m_{\text{eff}}a$):</strong> Suppresses Higgs coupling ($4.80\times 10^6\text{ kg} \to 0.00\text{ kg}$), dynamically scaling acceleration and G-loads.</div>
+        <div>• <strong>Fix 4 (Probabilistic 98% Phase-Shift &amp; 0.05s Nano-Heal):</strong> 98% quantum tunneling evasion, 2% residual phase-shear graze + 50ms auto-repair &amp; capacitor drain.</div>
+        <div>• <strong>Fix 5 (Strict Zero-Allocation Loop):</strong> Pre-allocated module-scope register vectors (`_v1.._v5`)—zero `new THREE.Vector3()` or `.clone()` inside `animate()`.</div>
+        <div>• <strong>Fix 6 &amp; 7 (Full 5 Cosmic 3D Geometries + 6-DOF Vertical Heave `R/F`):</strong> Oort Comets, Nebulae, 6,000-Star Galaxy, Cosmic Web, Multiverse Bubbles &amp; Vertical Thrusters.</div>
+      </div>
+      <button class="launch-btn" onclick="startSimulation()">LAUNCH AUDITED 6-DOF PHYSICS ENGINE</button>
+    </div>
+  </div>
+
+  <!-- DUAL ANALOG VIRTUAL TOUCH JOYSTICKS + VERTICAL HEAVE (UP/DOWN) -->
+  <div class="joystick-zone" id="joy-left">
+    <div class="joy-knob" id="knob-left"></div>
+    <span class="joy-label">Surge (W/S) / Strafe (A/D)</span>
+  </div>
+  <div class="heave-pad">
+    <button class="heave-btn" onmousedown="setKey('r',true)" onmouseup="setKey('r',false)" ontouchstart="setKey('r',true)" ontouchend="setKey('r',false)">▲ UP [R]</button>
+    <button class="heave-btn" onmousedown="setKey('f',true)" onmouseup="setKey('f',false)" ontouchstart="setKey('f',true)" ontouchend="setKey('f',false)">▼ DN [F]</button>
+  </div>
+  <div class="joystick-zone" id="joy-right">
+    <div class="joy-knob" id="knob-right"></div>
+    <span class="joy-label">Pitch / Yaw (Arrows)</span>
+  </div>
+
+  <div id="hud">
+    <div class="top-bar">
+      <div class="panel title-box">
+        <h1>FTL: 6-DOF Zero-Alloc Physics Lab</h1>
+        <p>W/S: Surge | A/D: Strafe | R/F: Heave Up/Dn | Q/E: Roll | Arrows/Mouse: Pitch/Yaw</p>
+        <div class="cosmic-bar">
+          <button class="zone-btn active" id="zone-btn-0" onclick="setCosmicZone(0)">[1] ऊर्ट क्लाउड</button>
+          <button class="zone-btn" id="zone-btn-1" onclick="setCosmicZone(1)">[2] अंतरतारकीय</button>
+          <button class="zone-btn" id="zone-btn-2" onclick="setCosmicZone(2)">[3] आकाशगंगा</button>
+          <button class="zone-btn" id="zone-btn-3" onclick="setCosmicZone(3)">[4] ब्रह्मांड</button>
+          <button class="zone-btn" id="zone-btn-4" onclick="setCosmicZone(4)">[5] मल्टीवर्स</button>
+        </div>
+      </div>
+
+      <div class="panel telemetry-grid">
+        <span class="label">Effective Mass (m₀,eff):</span>
+        <span id="mass-val" class="val warn">4.80×10⁶ kg (Higgs Coupled)</span>
+
+        <span class="label">Local Frame Speed:</span>
+        <span id="local-speed-val" class="val">28.0 m/s (1.0G Inertia)</span>
+
+        <span class="label">ADM Metric Speed:</span>
+        <span id="metric-speed-val" class="val">0.0000 c (Flat Minkowski)</span>
+
+        <span class="label">Phase-Shift / Nano-Heal:</span>
+        <span id="nano-val" class="val">Solid | 0.05s Nano Ready</span>
+
+        <span class="label">Active Cosmic Environment:</span>
+        <span id="zone-val" class="val">1. Oort Comet Halo (60 Objects)</span>
+
+        <span class="label">Frame / Heap Allocations:</span>
+        <span id="gpu-val" class="val">60 FPS | dt: 16.6ms | 0 Allocs/f</span>
+      </div>
+
+      <div class="panel radar-panel">
+        <div class="radar-title">Tactical Radar</div>
+        <canvas id="radar-canvas" width="112" height="112"></canvas>
+        <div class="radar-legend">
+          <span><i class="dot" style="background:#00f3ff"></i>Portal</span>
+          <span><i class="dot" style="background:#ffaa00"></i>Star</span>
+          <span><i class="dot" style="background:#00ff88"></i>Carrier</span>
+          <span><i class="dot" style="background:#ff0044"></i>Hostile</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="eq-panel">
+      <h2>Live Audited Physics Telemetry</h2>
+      <div class="eq-row">
+        <div class="eq-formula">1. Dynamic Mass: a = F_rcs / m₀,eff(ϕ) | G-Load</div>
+        <div class="eq-live" id="eq-1">m_eff = 4.80×10⁶ kg | a_max = 95 m/s²</div>
+      </div>
+      <div class="eq-row">
+        <div class="eq-formula">2. ADM Contraction: v_eff = v_loc · Λ_ADM(θ)</div>
+        <div class="eq-live" id="eq-2">Λ_ADM = 1.0x | θ = 0.00 s⁻¹</div>
+      </div>
+      <div class="eq-row">
+        <div class="eq-formula">3. Morris-Thorne Throat: z(r) = ±b₀ ln(r/b₀ + √((r/b₀)²-1))</div>
+        <div class="eq-live" id="eq-3">b(r₀) = 460m | Cooldown: Ready</div>
+      </div>
+      <div class="eq-row" style="margin-bottom:0; border:none;">
+        <div class="eq-formula">4. 98% Phase-Shift + 0.05s Tier-4 Nano-Armor</div>
+        <div class="eq-live" id="eq-4">Tunneled: 0 | 2% Shear Grazes: 0</div>
+      </div>
+    </div>
+
+    <div id="center-hud">
+      <div class="reticle" id="reticle-btn" onclick="toggleMouseSteer()" title="Click to Toggle Mouse Flight Aim"></div>
+      <div id="countdown-banner"></div>
+      <div id="alert-banner">6-DOF READY: W/S SURGE | A/D STRAFE | R/F VERTICAL HEAVE | Q/E ROLL | [B] 0/0 BUBBLE</div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="panel bar-group">
+        <div class="bar-item">
+          <div class="bar-header">
+            <span>Atirikt/Backup Plasma Capacitor (250 EJ)</span>
+            <span id="cap-text">188 EJ</span>
+          </div>
+          <div class="bar-track"><div id="cap-bar" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-item">
+          <div class="bar-header">
+            <span>Portal 450 PW Casimir Conduits (920m Throat)</span>
+            <span id="conduit-text">100%</span>
+          </div>
+          <div class="bar-track"><div id="conduit-bar" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-item">
+          <div class="bar-header">
+            <span>Hostile Dreadnought Boss Hull</span>
+            <span id="boss-text">100%</span>
+          </div>
+          <div class="bar-track"><div id="boss-bar" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-item">
+          <div class="bar-header">
+            <span>Portal Schwarzschild Tension Limit [G]</span>
+            <span id="sch-text">Safe (20%)</span>
+          </div>
+          <div class="bar-track"><div id="sch-bar" class="bar-fill"></div></div>
+        </div>
+        <div class="bar-item" style="margin-bottom:0;">
+          <div class="bar-header">
+            <span>Tier-4 Nanolattice Self-Healing Hull (0.05s)</span>
+            <span id="hull-text">100%</span>
+          </div>
+          <div class="bar-track"><div id="hull-bar" class="bar-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="panel controls-panel">
+        <button class="btn" id="btn-bubble" onclick="toggleBubble()">[B] 0/0 Bubble</button>
+        <button class="btn" id="btn-orbit" onclick="injectStableOrbit()">[O] Inject Orbit</button>
+        <button class="btn active" id="btn-damp" onclick="toggleDampers()">[I] RCS Dampers</button>
+        <button class="btn" id="btn-warp" onclick="toggleWarp()">[SHIFT] Space Puller</button>
+        <button class="btn" id="btn-phase" onclick="togglePhase()">[Z] 98% Phase-Shift</button>
+        <button class="btn" id="btn-laser" onclick="firePlayerLaser()">[SPACE] 1.85 PW</button>
+        <button class="btn" id="btn-plasma" onclick="firePlayerPlasma()">[V] 450 TJ Plasma</button>
+        <button class="btn" id="btn-shunt" onclick="shuntPortalMass()">[G] 899 EW Shunt</button>
+        <button class="btn active" id="btn-wing" onclick="toggleWingmen()">[Y] Squadron</button>
+        <button class="btn" id="btn-mothership" onclick="toggleMothershipMode()">[C] Mothership</button>
+        <button class="btn active" id="btn-grid" onclick="toggleMetricGrid()">[H] Metric Grid</button>
+        <button class="btn" id="btn-armada" onclick="triggerArmadaJump()">[M] 120.0s Jump</button>
+        <button class="btn" id="btn-fast" onclick="toggleCountdownSpeed()">[X] 10x Timer: OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // =========================================================================
+    // 0. PRE-ALLOCATED SCRATCH REGISTERS (ZERO HEAP ALLOCATIONS IN ANIMATE LOOP)
+    // =========================================================================
+    const _v1 = new THREE.Vector3();
+    const _v2 = new THREE.Vector3();
+    const _v3 = new THREE.Vector3();
+    const _v4 = new THREE.Vector3();
+    const _v5 = new THREE.Vector3();
+    const _forward = new THREE.Vector3();
+    const _right = new THREE.Vector3();
+    const _up = new THREE.Vector3();
+    const _simPos = new THREE.Vector3();
+    const _simVel = new THREE.Vector3();
+    const _gAcc = new THREE.Vector3();
+    const _worldTurPos = new THREE.Vector3();
+
+    // =========================================================================
+    // 1. PROCEDURAL TEXTURES & SPRITES (ALLOCATED ONCE AT STARTUP)
+    // =========================================================================
+    function createHullTexture() {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#0f1c30';
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.strokeStyle = '#243b5c';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 256; i += 32) {
+        ctx.strokeRect(i, 0, 32, 256);
+        ctx.strokeRect(0, i, 256, 32);
+      }
+      ctx.strokeStyle = 'rgba(0, 243, 255, 0.5)';
+      ctx.lineWidth = 1;
+      for (let i = 16; i < 256; i += 64) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      return tex;
+    }
+
+    function createHexLatticeTexture() {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.strokeStyle = '#ffbb33';
+      ctx.lineWidth = 2;
+      const r = 24;
+      for (let y = 0; y < 280; y += r * 1.5) {
+        for (let x = 0; x < 280; x += r * Math.sqrt(3)) {
+          const cx = x + (Math.round(y / (r * 1.5)) % 2) * (r * Math.sqrt(3) / 2);
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3;
+            const px = cx + r * Math.cos(a), py = y + r * Math.sin(a);
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(4, 4);
+      return tex;
+    }
+
+    function createGlowSprite(colorHex, scale) {
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const ctx = c.getContext('2d');
+      const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.35, colorHex);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      const mat = new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(c),
+        blending: THREE.AdditiveBlending,
+        transparent: true
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(scale, scale, 1);
+      return sprite;
+    }
+
+    const hullTex = createHullTexture();
+    const hexTex = createHexLatticeTexture();
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freqStart, freqEnd, dur = 0.14, type = 'sawtooth') {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freqStart, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), audioCtx.currentTime + dur);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.008, audioCtx.currentTime + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + dur);
+    }
+
+    function speakAI(text) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.08; u.pitch = 0.95; u.volume = 0.8;
+      window.speechSynthesis.speak(u);
+    }
+
+    function startSimulation() {
+      document.getElementById('title-screen').style.display = 'none';
+      playTone(180, 720, 0.35, 'sine');
+      speakAI('Audited six degree of freedom physics engine and five cosmic zone geometries initialized.');
+    }
+
+    // =========================================================================
+    // 2. THREE.JS SCENE, RENDERER & DELTA-TIME CLOCK
+    // =========================================================================
+    const clock = new THREE.Clock();
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x041428, 0.00015);
+
+    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 35000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.domElement.id = 'game-canvas';
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0x66aaff, 0x081020, 1.15));
+    const sunLight = new THREE.DirectionalLight(0x88eeff, 1.8);
+    sunLight.position.set(500, 800, 400);
+    scene.add(sunLight);
+
+    const radarCanvas = document.getElementById('radar-canvas');
+    const rCtx = radarCanvas.getContext('2d');
+
+    // =========================================================================
+    // 3. AUDITED PHYSICS & SIMULATION STATE
+    // =========================================================================
+    const state = {
+      // Fix 3: Explicit Baryonic & Effective Inertial Mass (kg)
+      restMassKg: 4.80e6,           // 4,800 Tonnes Escort Vessel
+      higgsSuppression: 0.0,        // 0.0 (Coupled) -> 1.0 (0/0 Massless State)
+      effectiveMassKg: 4.80e6,
+      rcsForceN: 4.56e8,            // 456 MN Thrusters (gives 95 m/s² when m = 4.8e6 kg)
+      bubbleActive: false,
+      inertialDampers: true,
+      spacePuller: false,
+      // Fix 2: Explicit ADM Contraction Multiplier & Authentic Local/Metric Speeds
+      admContractionFactor: 1.0,    // Scales to 365,000c equivalent metric shift
+      metricSpeedC: 0.0,
+      // Fix 4: Probabilistic 98% Phase-Shift & 0.05s Tier-4 Nano-Heal Timer
+      phaseShift: false,
+      tunneledCount: 0,
+      shearGrazeCount: 0,
+      nanoHealTimerSec: 0.0,        // 0.05s (50ms) self-repair timer
+      // Fix 1: Portal Jump Cooldown to prevent infinite loop
+      portalJumpCooldownSec: 0.0,
+      mothershipControl: false,
+      wingmenActive: true,
+      showMetricGrid: true,
+      mouseSteer: false,
+      mouseX: 0,
+      mouseY: 0,
+      // Real 120.00-second Armada Countdown State
+      armadaSyncing: false,
+      armadaCountdownSec: 120.0,
+      fastCountdown: false,
+      stageTriggered: { s120: false, s60: false, s30: false, s5: false },
+      // 6-DOF Kinematics
+      linearVel: new THREE.Vector3(0, 0, -28),
+      angularVel: new THREE.Vector3(0, 0, 0),
+      gLoad: 1.0,
+      capacitorEJ: 188,
+      totalHarvestedEJ: 0,
+      conduitIntegrity: 100,
+      hullIntegrity: 100,
+      bossHull: 100,
+      schStability: 20,
+      systemIdx: 0,
+      shakeIntensity: 0,
+      keys: {},
+      joyLeft: { x: 0, y: 0 },
+      joyRight: { x: 0, y: 0 }
+    };
+
+    // =========================================================================
+    // 4. FIX 6: COMPLETE 3D GEOMETRIES FOR ALL 5 COSMIC SCALE ZONES
+    // =========================================================================
+    const cosmicZones = [
+      { name: '1. Oort Comet Halo (60 Icy Comets)', fog: 0x041428, light: 0x88eeff },
+      { name: '2. Interstellar Ionized Nebulae', fog: 0x160418, light: 0xff3388 },
+      { name: '3. Milky Way Spiral Galaxy (6,000 Stars)', fog: 0x03091c, light: 0x00ffcc },
+      { name: '4. Observable Universe Cosmic Web', fog: 0x0c0322, light: 0xffcc00 },
+      { name: '5. Multiverse Bulk (16 Bubble Universes)', fog: 0x14022c, light: 0xbc13fe }
+    ];
+
+    // ZONE 1: Oort Cloud (60 3D Icy Comets with Tails)
+    const oortGroup = new THREE.Group();
+    scene.add(oortGroup);
+    const oortComets = [];
+    const cometHeadGeo = new THREE.DodecahedronGeometry(6.5, 1);
+    const cometHeadMat = new THREE.MeshStandardMaterial({ color: 0xaeeeff, emissive: 0x114466, roughness: 0.3 });
+    const cometTailGeo = new THREE.ConeGeometry(4.5, 36, 8, 1, true).rotateX(-Math.PI / 2);
+    const cometTailMat = new THREE.MeshBasicMaterial({ color: 0x66ddff, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
+
+    for (let i = 0; i < 60; i++) {
+      const cg = new THREE.Group();
+      cg.add(new THREE.Mesh(cometHeadGeo, cometHeadMat));
+      const tail = new THREE.Mesh(cometTailGeo, cometTailMat);
+      tail.position.set(0, 0, 19);
+      cg.add(tail);
+      cg.position.set((Math.random() - 0.5) * 2400, (Math.random() - 0.5) * 1200, -Math.random() * 2400);
+      oortGroup.add(cg);
+      oortComets.push(cg);
+    }
+
+    // ZONE 2: Interstellar Space (28 Volumetric Ionized Nebula Clouds)
+    const interstellarGroup = new THREE.Group();
+    interstellarGroup.visible = false;
+    scene.add(interstellarGroup);
+    const nebCols = ['#ff2277', '#00f3ff', '#9922ff', '#00ffaa'];
+    for (let i = 0; i < 28; i++) {
+      const neb = createGlowSprite(nebCols[i % 4], 400 + Math.random() * 320);
+      neb.position.set((Math.random() - 0.5) * 3200, (Math.random() - 0.5) * 1600, -300 - Math.random() * 2800);
+      neb.material.opacity = 0.3;
+      interstellarGroup.add(neb);
+    }
+
+    // ZONE 3: Spiral Galaxy (6,000-Star 4-Arm 3D Spiral Disk + Galactic Core)
+    const galaxyGroup = new THREE.Group();
+    galaxyGroup.visible = false;
+    galaxyGroup.position.set(0, -160, -1500);
+    scene.add(galaxyGroup);
+    const galStarCount = 6000;
+    const galGeo = new THREE.BufferGeometry();
+    const galPos = new Float32Array(galStarCount * 3);
+    const galCols = new Float32Array(galStarCount * 3);
+    for (let i = 0; i < galStarCount; i++) {
+      const arm = i % 4;
+      const rad = Math.random() * 1600 + 40;
+      const ang = rad * 0.0045 + (arm * Math.PI) / 2;
+      const sp = (Math.random() - 0.5) * 140;
+      galPos[i * 3] = Math.cos(ang) * rad + sp;
+      galPos[i * 3 + 1] = (Math.random() - 0.5) * 80;
+      galPos[i * 3 + 2] = Math.sin(ang) * rad + sp;
+      const isCore = rad < 380;
+      galCols[i * 3] = isCore ? 1.0 : 0.15;
+      galCols[i * 3 + 1] = 0.85;
+      galCols[i * 3 + 2] = 1.0;
+    }
+    galGeo.setAttribute('position', new THREE.BufferAttribute(galPos, 3));
+    galGeo.setAttribute('color', new THREE.BufferAttribute(galCols, 3));
+    const spiralGalaxyMesh = new THREE.Points(
+      galGeo,
+      new THREE.PointsMaterial({ size: 5.5, vertexColors: true, transparent: true, opacity: 0.9 })
+    );
+    spiralGalaxyMesh.rotation.x = 0.42;
+    galaxyGroup.add(spiralGalaxyMesh);
+    galaxyGroup.add(createGlowSprite('#ffdd77', 680));
+
+    // ZONE 4: Observable Universe (Cosmic Web Supercluster Filaments & Quasar Nodes)
+    const universeGroup = new THREE.Group();
+    universeGroup.visible = false;
+    scene.add(universeGroup);
+    const webNodes = [];
+    for (let i = 0; i < 55; i++) {
+      const pt = new THREE.Vector3((Math.random() - 0.5) * 3200, (Math.random() - 0.5) * 1800, -200 - Math.random() * 3000);
+      webNodes.push(pt);
+      const ns = createGlowSprite(i % 2 === 0 ? '#ffcc00' : '#bc13fe', 90);
+      ns.position.copy(pt);
+      universeGroup.add(ns);
+    }
+    const webPts = [];
+    for (let i = 0; i < webNodes.length; i++) {
+      for (let j = i + 1; j < webNodes.length; j++) {
+        if (webNodes[i].distanceTo(webNodes[j]) < 920) webPts.push(webNodes[i], webNodes[j]);
+      }
+    }
+    const cosmicWebLines = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(webPts),
+      new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.48 })
+    );
+    universeGroup.add(cosmicWebLines);
+
+    // ZONE 5: Multiverse Bulk-Space (16 Rotating Parallel Bubble Universes)
+    const multiverseGroup = new THREE.Group();
+    multiverseGroup.visible = false;
+    scene.add(multiverseGroup);
+    const bubbleUniverses = [];
+    const bCols = [0x00f3ff, 0xff0066, 0x00ff88, 0xbc13fe, 0xffcc00];
+    for (let i = 0; i < 16; i++) {
+      const bs = new THREE.Mesh(
+        new THREE.SphereGeometry(130 + (i % 3) * 50, 24, 24),
+        new THREE.MeshBasicMaterial({
+          map: hexTex,
+          color: bCols[i % 5],
+          wireframe: i % 2 === 0,
+          transparent: true,
+          opacity: 0.38,
+          blending: THREE.AdditiveBlending
+        })
+      );
+      bs.position.set((Math.random() - 0.5) * 3000, (Math.random() - 0.5) * 1600, -300 - Math.random() * 2800);
+      multiverseGroup.add(bs);
+      bubbleUniverses.push(bs);
+    }
+
+    // =========================================================================
+    // 5. GRAVITATIONAL BODIES & ZERO-ALLOCATION KEPLERIAN ORBIT PREDICTOR
+    // =========================================================================
+    const solarStarGroup = new THREE.Group();
+    solarStarGroup.position.set(-420, 0, -680);
+    scene.add(solarStarGroup);
+    solarStarGroup.add(new THREE.Mesh(
+      new THREE.SphereGeometry(85, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+    ));
+    solarStarGroup.add(new THREE.Mesh(
+      new THREE.SphereGeometry(102, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xff5500, wireframe: true, transparent: true, opacity: 0.35 })
+    ));
+
+    const planetGroup = new THREE.Group();
+    planetGroup.position.set(580, -40, -950);
+    scene.add(planetGroup);
+    planetGroup.add(new THREE.Mesh(
+      new THREE.SphereGeometry(65, 28, 28),
+      new THREE.MeshStandardMaterial({ map: hullTex, color: 0x2277cc, roughness: 0.7 })
+    ));
+    const pRing = new THREE.Mesh(
+      new THREE.RingGeometry(85, 135, 40),
+      new THREE.MeshBasicMaterial({ color: 0x66ccff, side: THREE.DoubleSide, transparent: true, opacity: 0.45 })
+    );
+    pRing.rotation.x = Math.PI / 2.2;
+    planetGroup.add(pRing);
+
+    const gravityWells = [
+      { mesh: solarStarGroup, gm: 1450000, minR: 110, name: 'Solar Star' },
+      { mesh: planetGroup, gm: 520000, minR: 85, name: 'Gas Giant' }
+    ];
+
+    const orbitSteps = 120;
+    const orbitPositions = new Float32Array(orbitSteps * 3);
+    const orbitGeo = new THREE.BufferGeometry();
+    orbitGeo.setAttribute('position', new THREE.BufferAttribute(orbitPositions, 3));
+    const orbitLine = new THREE.Line(
+      orbitGeo,
+      new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.75 })
+    );
+    scene.add(orbitLine);
+
+    // Zero-Allocation Gravity Evaluator (mutates outAcc in place)
+    function computeGravityAccelInPlace(pos, outAcc) {
+      outAcc.set(0, 0, 0);
+      const gravCoupling = 1.0 - state.higgsSuppression;
+      if (gravCoupling <= 0.001) return;
+      for (let i = 0; i < gravityWells.length; i++) {
+        const gw = gravityWells[i];
+        _v5.subVectors(gw.mesh.position, pos);
+        const distSq = Math.max(gw.minR * gw.minR, _v5.lengthSq());
+        const forceMag = (gw.gm / distSq) * gravCoupling;
+        outAcc.addScaledVector(_v5.normalize(), forceMag);
+      }
+    }
+
+    function updateOrbitalTrajectoryLine(startPos, startVel) {
+      const posArr = orbitLine.geometry.attributes.position.array;
+      _simPos.copy(startPos);
+      _simVel.copy(startVel);
+      const simDt = 0.25;
+      for (let i = 0; i < orbitSteps; i++) {
+        posArr[i * 3] = _simPos.x;
+        posArr[i * 3 + 1] = _simPos.y;
+        posArr[i * 3 + 2] = _simPos.z;
+        computeGravityAccelInPlace(_simPos, _gAcc);
+        _simVel.addScaledVector(_gAcc, simDt);
+        _simPos.addScaledVector(_simVel, simDt);
+      }
+      orbitLine.geometry.attributes.position.needsUpdate = true;
+      orbitLine.material.color.setHex(state.bubbleActive ? 0x00f3ff : 0x00ff88);
+    }
+
+    // =========================================================================
+    // 6. SPACETIME METRIC TENSOR GRID & MORRIS-THORNE WORMHOLE FUNNEL
+    // =========================================================================
+    const gridSegs = 34;
+    const metricGridGeo = new THREE.PlaneGeometry(700, 700, gridSegs, gridSegs);
+    metricGridGeo.rotateX(-Math.PI / 2);
+    const metricGridBasePos = metricGridGeo.attributes.position.array.slice();
+    const metricGridMesh = new THREE.Mesh(
+      metricGridGeo,
+      new THREE.MeshBasicMaterial({ color: 0x00aaff, wireframe: true, transparent: true, opacity: 0.28 })
+    );
+    scene.add(metricGridMesh);
+
+    function updateSpacetimeMetricGrid(activeObj, forwardVec, timeSec) {
+      if (!state.showMetricGrid) {
+        metricGridMesh.visible = false;
+        return;
+      }
+      metricGridMesh.visible = true;
+      metricGridMesh.position.set(activeObj.position.x, activeObj.position.y - 26, activeObj.position.z);
+
+      const posAttr = metricGridGeo.attributes.position;
+      const arr = posAttr.array;
+
+      for (let i = 0; i < arr.length; i += 3) {
+        const bx = metricGridBasePos[i];
+        const bz = metricGridBasePos[i + 2];
+        const worldVx = metricGridMesh.position.x + bx;
+        const worldVz = metricGridMesh.position.z + bz;
+
+        let yDip = 0;
+        let xPull = bx;
+        let zPull = bz;
+
+        for (let g = 0; g < gravityWells.length; g++) {
+          const gw = gravityWells[g];
+          const dx = worldVx - gw.mesh.position.x;
+          const dz = worldVz - gw.mesh.position.z;
+          const d = Math.sqrt(dx * dx + dz * dz);
+          yDip -= Math.min(95, (gw.gm * 0.045) / (d + 90));
+        }
+
+        const distFromShip = Math.sqrt(bx * bx + bz * bz);
+        if (state.spacePuller && distFromShip < 280) {
+          const proj = (bx * forwardVec.x + bz * forwardVec.z) / (distFromShip + 1);
+          if (proj > 0) {
+            const contractFactor = Math.exp(-distFromShip / 140) * proj * 0.55;
+            xPull -= bx * contractFactor;
+            zPull -= bz * contractFactor;
+            yDip -= Math.sin(distFromShip * 0.08 - timeSec * 12) * 14 * proj;
+          }
+        } else if (state.bubbleActive && distFromShip < 65) {
+          yDip *= (1.0 - state.higgsSuppression * 0.9);
+        }
+
+        arr[i] = xPull;
+        arr[i + 1] = yDip;
+        arr[i + 2] = zPull;
+      }
+      posAttr.needsUpdate = true;
+    }
+
+    const portalGroup = new THREE.Group();
+    portalGroup.position.set(160, 20, -950);
+    scene.add(portalGroup);
+
+    portalGroup.add(new THREE.Mesh(
+      new THREE.TorusGeometry(105, 7.5, 20, 72),
+      new THREE.MeshStandardMaterial({ map: hullTex, color: 0x223b55, metalness: 0.92, roughness: 0.2, emissive: 0x00263a })
+    ));
+    const innerCasimirRing = new THREE.Mesh(
+      new THREE.TorusGeometry(97, 2.8, 12, 48),
+      new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
+    );
+    portalGroup.add(innerCasimirRing);
+
+    function createMorrisThorneFunnelGeometry() {
+      const radialSegs = 26;
+      const angularSegs = 44;
+      const b0 = 32;
+      const rMax = 96;
+      const positions = [];
+      const indices = [];
+
+      for (let side = -1; side <= 1; side += 2) {
+        const baseIdx = positions.length / 3;
+        for (let i = 0; i <= radialSegs; i++) {
+          const u = i / radialSegs;
+          const r = b0 + u * (rMax - b0);
+          const ratio = Math.max(1.0, r / b0);
+          const z = side * b0 * Math.log(ratio + Math.sqrt(ratio * ratio - 1.0)) * 0.85;
+          for (let j = 0; j <= angularSegs; j++) {
+            const theta = (j / angularSegs) * Math.PI * 2;
+            positions.push(r * Math.cos(theta), r * Math.sin(theta), z);
+          }
+        }
+        for (let i = 0; i < radialSegs; i++) {
+          for (let j = 0; j < angularSegs; j++) {
+            const a = baseIdx + i * (angularSegs + 1) + j;
+            const b = a + angularSegs + 1;
+            indices.push(a, b, a + 1, b, b + 1, a + 1);
+          }
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      return geo;
+    }
+
+    const wormholeFunnelMesh = new THREE.Mesh(
+      createMorrisThorneFunnelGeometry(),
+      new THREE.MeshBasicMaterial({ color: 0x00e1ff, wireframe: true, transparent: true, opacity: 0.45 })
+    );
+    portalGroup.add(wormholeFunnelMesh);
+
+    // =========================================================================
+    // 7. ESCORT VESSEL (68.0m) & 3.25-KM MOTHERSHIP WITH ARTICULATED 360° TURRETS
+    // =========================================================================
+    const shipGroup = new THREE.Group();
+    scene.add(shipGroup);
+
+    const hullMat = new THREE.MeshStandardMaterial({
+      map: hullTex, metalness: 0.88, roughness: 0.22, emissive: 0x051525, transparent: true, opacity: 1.0
+    });
+    shipGroup.add(new THREE.Mesh(new THREE.ConeGeometry(2.3, 13.5, 8).rotateX(Math.PI / 2), hullMat));
+
+    const canopy = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.85, 4.2),
+      new THREE.MeshStandardMaterial({ color: 0x00f3ff, emissive: 0x0088aa, metalness: 0.9, roughness: 0.1 })
+    );
+    canopy.position.set(0, 1.15, -1.0);
+    shipGroup.add(canopy);
+
+    const wingMat = new THREE.MeshStandardMaterial({
+      map: hullTex, color: 0x00d9ff, emissive: 0x003355, metalness: 0.9, roughness: 0.15, transparent: true, opacity: 1.0
+    });
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.28, 3.8), wingMat);
+    wings.position.set(0, 0, 1.6);
+    shipGroup.add(wings);
+
+    const spacePullerCone = new THREE.Mesh(
+      new THREE.ConeGeometry(4.0, 16, 20, 2, true).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true, transparent: true, opacity: 0 })
+    );
+    spacePullerCone.position.set(0, 0, -13);
+    shipGroup.add(spacePullerCone);
+
+    const isolationBubble = new THREE.Mesh(
+      new THREE.SphereGeometry(7.6, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0x00f3ff, wireframe: true, transparent: true, opacity: 0 })
+    );
+    shipGroup.add(isolationBubble);
+
+    const hexShieldMat = new THREE.MeshBasicMaterial({
+      map: hexTex, color: 0xffaa00, side: THREE.DoubleSide, transparent: true, opacity: 0, blending: THREE.AdditiveBlending
+    });
+    const hexShieldMesh = new THREE.Mesh(new THREE.SphereGeometry(8.2, 24, 24), hexShieldMat);
+    shipGroup.add(hexShieldMesh);
+
+    const mothershipGroup = new THREE.Group();
+    mothershipGroup.position.set(-220, 45, -520);
+    scene.add(mothershipGroup);
+
+    const msMat = new THREE.MeshStandardMaterial({
+      map: hullTex, color: 0x1c2d44, metalness: 0.88, roughness: 0.25, emissive: 0x061020
+    });
+    mothershipGroup.add(new THREE.Mesh(new THREE.BoxGeometry(92, 20, 325), msMat));
+    const msBridge = new THREE.Mesh(new THREE.BoxGeometry(38, 18, 110), msMat);
+    msBridge.position.set(0, 19, 45);
+    mothershipGroup.add(msBridge);
+
+    for (let i = 0; i < 12; i++) {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(4.8, 12, 12), new THREE.MeshBasicMaterial({ color: 0x00f3ff }));
+      core.position.set(i % 2 === 0 ? -49 : 49, 0, -125 + Math.floor(i / 2) * 50);
+      mothershipGroup.add(core);
+    }
+
+    const msTurrets = [];
+    [
+      new THREE.Vector3(-32, 12, -90),
+      new THREE.Vector3(32, 12, -90),
+      new THREE.Vector3(-32, 12, 10),
+      new THREE.Vector3(32, 12, 10)
+    ].forEach(off => {
+      const tPivot = new THREE.Group();
+      tPivot.position.copy(off);
+      tPivot.add(new THREE.Mesh(new THREE.SphereGeometry(4, 10, 10), msMat));
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.9, 0.9, 16, 8).rotateX(Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x00ffcc })
+      );
+      barrel.position.set(0, 1, -8);
+      tPivot.add(barrel);
+      mothershipGroup.add(tPivot);
+      msTurrets.push({ pivot: tPivot, cooldown: Math.random() * 1.2 });
+    });
+
+    const tetherMat = new THREE.LineBasicMaterial({ color: 0xffea00, transparent: true, opacity: 0 });
+    const goldenTether = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      tetherMat
+    );
+    scene.add(goldenTether);
+
+    // =========================================================================
+    // 8. STRICT ZERO-ALLOCATION GPU OBJECT POOLS (PROJECTILES & PARTICLES)
+    // =========================================================================
+    const MAX_PROJECTILES = 140;
+    const projectilePool = [];
+    const sharedBeamGeo = new THREE.CylinderGeometry(0.45, 0.45, 38, 6).rotateX(Math.PI / 2);
+
+    for (let i = 0; i < MAX_PROJECTILES; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+      const mesh = new THREE.Mesh(sharedBeamGeo, mat);
+      mesh.visible = false;
+      scene.add(mesh);
+      projectilePool.push({
+        mesh,
+        vel: new THREE.Vector3(),
+        life: 0,
+        isHostile: false,
+        isPlasma: false
+      });
+    }
+
+    function spawnPooledProjectile(originPos, dirVec, speed, colorHex, isHostile = false, isPlasma = false) {
+      let slot = null;
+      for (let i = 0; i < MAX_PROJECTILES; i++) {
+        if (projectilePool[i].life <= 0) { slot = projectilePool[i]; break; }
+      }
+      if (!slot) return;
+      slot.mesh.position.copy(originPos);
+      _v4.copy(originPos).add(dirVec);
+      slot.mesh.lookAt(_v4);
+      slot.mesh.scale.set(isPlasma ? 3.5 : 1, isPlasma ? 3.5 : 1, isPlasma ? 0.5 : 1);
+      slot.mesh.material.color.setHex(colorHex);
+      slot.mesh.visible = true;
+      slot.vel.copy(dirVec).normalize().multiplyScalar(speed);
+      slot.life = 2.4;
+      slot.isHostile = isHostile;
+      slot.isPlasma = isPlasma;
+    }
+
+    const MAX_PARTICLES = 1000;
+    const partPositions = new Float32Array(MAX_PARTICLES * 3);
+    const partColors = new Float32Array(MAX_PARTICLES * 3);
+    const partVelocities = new Array(MAX_PARTICLES);
+    const partLifetimes = new Float32Array(MAX_PARTICLES);
+
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      partPositions[i * 3 + 1] = -99999;
+      partVelocities[i] = new THREE.Vector3();
+      partLifetimes[i] = 0;
+    }
+
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(partColors, 3));
+    const particleSystem = new THREE.Points(
+      particleGeo,
+      new THREE.PointsMaterial({ size: 3.8, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
+    );
+    scene.add(particleSystem);
+    let particleCursor = 0;
+
+    function emitPooledParticles(pos, rCol, gCol, bCol, count, speedSpread, lifeSec) {
+      for (let c = 0; c < count; c++) {
+        const idx = particleCursor;
+        particleCursor = (particleCursor + 1) % MAX_PARTICLES;
+        partPositions[idx * 3] = pos.x;
+        partPositions[idx * 3 + 1] = pos.y;
+        partPositions[idx * 3 + 2] = pos.z;
+        partColors[idx * 3] = rCol;
+        partColors[idx * 3 + 1] = gCol;
+        partColors[idx * 3 + 2] = bCol;
+        partVelocities[idx].set(
+          (Math.random() - 0.5) * speedSpread,
+          (Math.random() - 0.5) * speedSpread,
+          (Math.random() - 0.5) * speedSpread
+        );
+        partLifetimes[idx] = lifeSec;
+      }
+    }
+
+    // =========================================================================
+    // 9. ENEMY AI STATE MACHINE, BOSS, WINGMEN & STARFIELD
+    // =========================================================================
+    const bossGroup = new THREE.Group();
+    bossGroup.position.set(280, 60, -850);
+    scene.add(bossGroup);
+    bossGroup.add(new THREE.Mesh(
+      new THREE.BoxGeometry(46, 16, 145),
+      new THREE.MeshStandardMaterial({ map: hullTex, color: 0x4a0a1c, emissive: 0x330011, metalness: 0.85 })
+    ));
+    let bossCooldownSec = 3.0;
+
+    const wingmen = [];
+    const sharedWingGeo = new THREE.ConeGeometry(1.6, 7.5, 5).rotateX(Math.PI / 2);
+    const sharedWingMat = new THREE.MeshBasicMaterial({ color: 0xbc13fe, wireframe: true });
+    for (let i = 0; i < 8; i++) {
+      const w = new THREE.Mesh(sharedWingGeo, sharedWingMat);
+      scene.add(w);
+      wingmen.push({ mesh: w, angle: (i / 8) * Math.PI * 2, cooldown: Math.random() * 1.0 });
+    }
+
+    const enemies = [];
+    const sharedEnemyGeo = new THREE.OctahedronGeometry(8.5, 1);
+    const sharedEnemyMat = new THREE.MeshStandardMaterial({ map: hullTex, color: 0xff2255, emissive: 0x660022, metalness: 0.85 });
+    for (let i = 0; i < 14; i++) {
+      const mesh = new THREE.Mesh(sharedEnemyGeo, sharedEnemyMat);
+      scene.add(mesh);
+      enemies.push({
+        mesh,
+        vel: new THREE.Vector3(),
+        aiState: 'APPROACH',
+        strafeDir: i % 2 === 0 ? 1 : -1,
+        fireCooldown: 1.5 + Math.random() * 2.0
+      });
+    }
+
+    function respawnEnemy(enObj) {
+      const activeObj = state.mothershipControl ? mothershipGroup : shipGroup;
+      enObj.mesh.position.set(
+        activeObj.position.x + (Math.random() - 0.5) * 1600,
+        activeObj.position.y + (Math.random() - 0.5) * 600,
+        activeObj.position.z - 450 - Math.random() * 1200
+      );
+      enObj.aiState = 'APPROACH';
+    }
+    enemies.forEach(en => respawnEnemy(en));
+
+    const starCount = 4000;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i += 3) {
+      starPos[i] = (Math.random() - 0.5) * 8000;
+      starPos[i + 1] = (Math.random() - 0.5) * 8000;
+      starPos[i + 2] = (Math.random() - 0.5) * 8000;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.0 });
+    const starFieldPoints = new THREE.Points(starGeo, starMat);
+    scene.add(starFieldPoints);
+
+    // =========================================================================
+    // 10. CONTROLS, ZONE SWITCHER & FIX 1 PORTAL RELOCATION
+    // =========================================================================
+    function showAlert(msg, color = '#ffea00') {
+      const b = document.getElementById('alert-banner');
+      b.textContent = msg; b.style.color = color;
+    }
+
+    function setKey(k, val) { state.keys[k] = val; }
+
+    // FIX 6: Switch actual 3D cosmic environment meshes
+    function setCosmicZone(idx) {
+      state.systemIdx = idx;
+      const z = cosmicZones[idx];
+      scene.fog.color.setHex(z.fog);
+      sunLight.color.setHex(z.light);
+
+      oortGroup.visible = (idx === 0);
+      interstellarGroup.visible = (idx === 1);
+      galaxyGroup.visible = (idx === 2);
+      universeGroup.visible = (idx === 3);
+      multiverseGroup.visible = (idx === 4);
+
+      const activeObj = state.mothershipControl ? mothershipGroup : shipGroup;
+      if (idx === 0) oortGroup.position.copy(activeObj.position);
+      if (idx === 1) interstellarGroup.position.copy(activeObj.position);
+      if (idx === 2) galaxyGroup.position.set(activeObj.position.x, activeObj.position.y - 160, activeObj.position.z - 1400);
+      if (idx === 3) universeGroup.position.copy(activeObj.position);
+      if (idx === 4) multiverseGroup.position.copy(activeObj.position);
+
+      for (let i = 0; i < 5; i++) {
+        document.getElementById(`zone-btn-${i}`).classList.toggle('active', i === idx);
+      }
+      document.getElementById('zone-val').textContent = z.name;
+      showAlert(`COSMIC ENVIRONMENT LOADED: ${z.name.toUpperCase()}`, '#00ff88');
+    }
+
+    function injectStableOrbit() {
+      const activeObj = state.mothershipControl ? mothershipGroup : shipGroup;
+      if (state.bubbleActive) toggleBubble();
+      let nearest = gravityWells[0];
+      let minDist = activeObj.position.distanceTo(nearest.mesh.position);
+      for (let i = 0; i < gravityWells.length; i++) {
+        const d = activeObj.position.distanceTo(gravityWells[i].mesh.position);
+        if (d < minDist) { minDist = d; nearest = gravityWells[i]; }
+      }
+
+      _v1.subVectors(activeObj.position, nearest.mesh.position);
+      const r = Math.max(nearest.minR + 40, _v1.length());
+      const vOrbitMag = Math.sqrt(nearest.gm / r);
+
+      _v2.set(-_v1.z, 0, _v1.x).normalize();
+      state.linearVel.copy(_v2.multiplyScalar(vOrbitMag));
+      _v3.copy(activeObj.position).add(state.linearVel);
+      activeObj.lookAt(_v3);
+
+      playTone(260, 680, 0.3, 'sine');
+      showAlert(`KEPLERIAN ORBIT INJECTED AROUND ${nearest.name.toUpperCase()}! v_orb = ${vOrbitMag.toFixed(1)} m/s`, '#00ff88');
+    }
+
+    function toggleDampers() {
+      state.inertialDampers = !state.inertialDampers;
+      document.getElementById('btn-damp').classList.toggle('active', state.inertialDampers);
+    }
+
+    function toggleBubble() {
+      state.bubbleActive = !state.bubbleActive;
+      document.getElementById('btn-bubble').classList.toggle('active', state.bubbleActive);
+      isolationBubble.material.opacity = state.bubbleActive ? 0.36 : 0;
+      playTone(state.bubbleActive ? 240 : 480, state.bubbleActive ? 540 : 180, 0.2, 'sine');
+      if (!state.bubbleActive) {
+        state.spacePuller = false;
+        spacePullerCone.material.opacity = 0;
+        document.getElementById('warp-overlay').style.display = 'none';
+        document.getElementById('btn-warp').classList.remove('active');
+      }
+      showAlert(
+        state.bubbleActive
+          ? '0/0 BUBBLE ENGAGED: HIGGS SUPPRESSION RAMPING TO 100% (m_eff → 0.00 kg, 0.0G)'
+          : 'HIGGS COUPLING RESTORED: BARYONIC INERTIA (4.80×10⁶ kg) & GRAVITY ACTIVE',
+        '#00ffcc'
+      );
+    }
+
+    function toggleWarp() {
+      if (!state.bubbleActive) {
+        showAlert('ENGAGE [B] 0/0 BUBBLE BEFORE SPACE PULLER!', '#ff3366');
+        return;
+      }
+      state.spacePuller = !state.spacePuller;
+      document.getElementById('btn-warp').classList.toggle('active', state.spacePuller);
+      spacePullerCone.material.opacity = state.spacePuller ? 0.5 : 0;
+      document.getElementById('warp-overlay').style.display = state.spacePuller ? 'block' : 'none';
+      if (state.spacePuller) playTone(140, 840, 0.35, 'sine');
+      showAlert(
+        state.spacePuller
+          ? 'ADM METRIC CONTRACTION ACTIVE: FORWARD SPACETIME STREAMING AT 365,000c!'
+          : 'SPACE PULLER DISENGAGED: FLAT MINKOWSKI METRIC',
+        '#00f3ff'
+      );
+    }
+
+    function togglePhase() {
+      state.phaseShift = !state.phaseShift;
+      document.getElementById('btn-phase').classList.toggle('active', state.phaseShift);
+      hullMat.opacity = state.phaseShift ? 0.25 : 1.0;
+      wingMat.opacity = state.phaseShift ? 0.25 : 1.0;
+      showAlert(
+        state.phaseShift
+          ? '98% QUANTUM PHASE-SHIFT ON (6 EJ/s Drain | 2% Shear Graze Risk)'
+          : 'SOLID BARYONIC PHASE RESTORED',
+        '#bc13fe'
+      );
+    }
+
+    function firePlayerLaser() {
+      if (state.capacitorEJ < 2) { showAlert('LOW CAPACITOR! PRESS [G] SHUNT!', '#ff3366'); return; }
+      state.capacitorEJ -= 2;
+      playTone(880, 120, 0.1, 'sawtooth');
+      const shooter = state.mothershipControl ? mothershipGroup : shipGroup;
+      _v1.set(0, 0, -1).applyQuaternion(shooter.quaternion);
+      [-3.5, 3.5].forEach(xOff => {
+        _v2.set(xOff, 0, -4).applyQuaternion(shooter.quaternion).add(shooter.position);
+        spawnPooledProjectile(_v2, _v1, 620, 0x00ffcc, false, false);
+      });
+    }
+
+    function firePlayerPlasma() {
+      if (state.capacitorEJ < 10) { showAlert('NEED 10 EJ FOR 450 TJ PLASMA CANNON!', '#ff3366'); return; }
+      state.capacitorEJ -= 10;
+      playTone(220, 55, 0.25, 'sawtooth');
+      const shooter = state.mothershipControl ? mothershipGroup : shipGroup;
+      _v1.set(0, 0, -1).applyQuaternion(shooter.quaternion);
+      spawnPooledProjectile(shooter.position, _v1, 420, 0xbc13fe, false, true);
+      showAlert('450 TJ VENTRAL PLASMA CANNON FIRED!', '#bc13fe');
+    }
+
+    function shuntPortalMass() {
+      playTone(110, 950, 0.4, 'sine');
+      state.schStability = 12;
+      state.conduitIntegrity = 100;
+      state.capacitorEJ = 250;
+      state.shakeIntensity = 4.5;
+      emitPooledParticles(portalGroup.position, 0.0, 1.0, 0.8, 80, 180, 1.4);
+      showAlert('PORTAL SHUNT [G]: 10,000 kg/s BLED → 899 EXAWATTS! CAPACITOR 250 EJ FULL!', '#00ff88');
+    }
+
+    function toggleWingmen() {
+      state.wingmenActive = !state.wingmenActive;
+      document.getElementById('btn-wing').classList.toggle('active', state.wingmenActive);
+      wingmen.forEach(w => w.mesh.visible = state.wingmenActive);
+    }
+
+    function toggleMothershipMode() {
+      state.mothershipControl = !state.mothershipControl;
+      state.restMassKg = state.mothershipControl ? 8.50e11 : 4.80e6;
+      state.rcsForceN = state.mothershipControl ? 4.25e13 : 4.56e8;
+      document.getElementById('btn-mothership').classList.toggle('active', state.mothershipControl);
+      showAlert(state.mothershipControl ? 'COMMAND TRANSFERRED TO 3.25-KM MOTHERSHIP' : 'COMMAND RETURNED TO ESCORT', '#00ff88');
+    }
+
+    function toggleMetricGrid() {
+      state.showMetricGrid = !state.showMetricGrid;
+      document.getElementById('btn-grid').classList.toggle('active', state.showMetricGrid);
+    }
+
+    function toggleMouseSteer() {
+      state.mouseSteer = !state.mouseSteer;
+      document.getElementById('reticle-btn').style.borderColor = state.mouseSteer ? '#00ff88' : '#00f3ff';
+    }
+
+    function triggerArmadaJump() {
+      if (!state.bubbleActive) {
+        showAlert('ENGAGE [B] 0/0 BUBBLE BEFORE INITIATING T-120.0s ARMADA COUNTDOWN!', '#ff3366');
+        return;
+      }
+      if (state.armadaSyncing) return;
+      state.armadaSyncing = true;
+      state.armadaCountdownSec = 120.0;
+      state.stageTriggered = { s120: false, s60: false, s30: false, s5: false };
+      document.getElementById('btn-armada').classList.add('active');
+      playTone(180, 880, 0.5, 'sine');
+    }
+
+    function toggleCountdownSpeed() {
+      state.fastCountdown = !state.fastCountdown;
+      const btn = document.getElementById('btn-fast');
+      btn.classList.toggle('active', state.fastCountdown);
+      btn.textContent = state.fastCountdown ? '[X] 10x Timer: ON' : '[X] 10x Timer: OFF';
+    }
+
+    // FIX 1: Relocate Portal Ring 1,800m ahead & set 3.0s Cooldown so jump triggers ONCE
+    function completeArmadaJump() {
+      if (state.portalJumpCooldownSec > 0) return;
+      state.portalJumpCooldownSec = 3.0;
+      state.armadaSyncing = false;
+      state.shakeIntensity = 7.0;
+      goldenTether.material.opacity = 0;
+      document.getElementById('btn-armada').classList.remove('active');
+      document.getElementById('countdown-banner').textContent = '';
+
+      const activeObj = state.mothershipControl ? mothershipGroup : shipGroup;
+      _v1.set(0, 0, -1).applyQuaternion(activeObj.quaternion);
+      // Relocate Portal Ring 1,800m ahead of the ship in the new zone!
+      portalGroup.position.copy(activeObj.position).addScaledVector(_v1, 1800);
+      solarStarGroup.position.copy(activeObj.position).add(new THREE.Vector3(-420, 40, -900));
+      planetGroup.position.copy(activeObj.position).add(new THREE.Vector3(580, -40, -1100));
+      bossGroup.position.copy(activeObj.position).add(new THREE.Vector3(260, 60, -1000));
+
+      setCosmicZone((state.systemIdx + 1) % cosmicZones.length);
+      state.capacitorEJ = 250;
+      state.schStability = 15;
+      enemies.forEach(en => respawnEnemy(en));
+
+      speakAI('Wormhole transit complete. Portal ring relocated to next sector.');
+      showAlert('EINSTEIN-ROSEN TRANSIT COMPLETE! PORTAL RE-ANCHORED 1,800m AHEAD (COOLDOWN: 3.0s)', '#00ff88');
+    }
+
+    // =========================================================================
+    // 11. INPUT LISTENERS (FULL 6-DOF: W/S SURGE, A/D STRAFE, R/F HEAVE, Q/E ROLL)
+    // =========================================================================
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      state.keys[k] = true;
+      if (k === '1') setCosmicZone(0);
+      if (k === '2') setCosmicZone(1);
+      if (k === '3') setCosmicZone(2);
+      if (k === '4') setCosmicZone(3);
+      if (k === '5') setCosmicZone(4);
+      if (k === 'b') toggleBubble();
+      if (k === 'o') injectStableOrbit();
+      if (k === 'i') toggleDampers();
+      if (e.key === 'Shift') toggleWarp();
+      if (k === 'z') togglePhase();
+      if (k === 'g') shuntPortalMass();
+      if (k === 'y') toggleWingmen();
+      if (k === 'c') toggleMothershipMode();
+      if (k === 'h') toggleMetricGrid();
+      if (k === 'x') toggleCountdownSpeed();
+      if (k === 'v') firePlayerPlasma();
+      if (e.code === 'Space') firePlayerLaser();
+      if (k === 'm') triggerArmadaJump();
+    });
+    window.addEventListener('keyup', (e) => { state.keys[e.key.toLowerCase()] = false; });
+
+    window.addEventListener('mousemove', (e) => {
+      state.mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+      state.mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    function bindVirtualJoystick(zoneId, knobId, outObj) {
+      const zone = document.getElementById(zoneId);
+      const knob = document.getElementById(knobId);
+      let activeTouchId = null;
+      let draggingMouse = false;
+
+      function updateStick(clientX, clientY) {
+        const rect = zone.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const maxR = rect.width / 2 - 16;
+        let dx = clientX - cx;
+        let dy = clientY - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR) {
+          dx = (dx / dist) * maxR;
+          dy = (dy / dist) * maxR;
+        }
+        knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        outObj.x = dx / maxR;
+        outObj.y = -dy / maxR;
+      }
+
+      function resetStick() {
+        knob.style.transform = 'translate(0px, 0px)';
+        outObj.x = 0; outObj.y = 0;
+      }
+
+      zone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        activeTouchId = t.identifier;
+        updateStick(t.clientX, t.clientY);
+      }, { passive: false });
+
+      zone.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === activeTouchId) {
+            updateStick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+          }
+        }
+      }, { passive: false });
+
+      zone.addEventListener('touchend', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === activeTouchId) {
+            activeTouchId = null;
+            resetStick();
+          }
+        }
+      });
+
+      zone.addEventListener('mousedown', (e) => { draggingMouse = true; updateStick(e.clientX, e.clientY); });
+      window.addEventListener('mousemove', (e) => { if (draggingMouse) updateStick(e.clientX, e.clientY); });
+      window.addEventListener('mouseup', () => { if (draggingMouse) { draggingMouse = false; resetStick(); } });
+    }
+
+    bindVirtualJoystick('joy-left', 'knob-left', state.joyLeft);
+    bindVirtualJoystick('joy-right', 'knob-right', state.joyRight);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function drawTacticalRadar(activeObj) {
+      const w = radarCanvas.width, h = radarCanvas.height, cx = w / 2, cy = h / 2;
+      rCtx.clearRect(0, 0, w, h);
+      rCtx.strokeStyle = 'rgba(0, 243, 255, 0.25)';
+      [20, 38, 52].forEach(r => { rCtx.beginPath(); rCtx.arc(cx, cy, r, 0, Math.PI * 2); rCtx.stroke(); });
+
+      const scale = 0.032;
+      function plotBlip(pos, color, size = 3) {
+        const dx = (pos.x - activeObj.position.x) * scale;
+        const dz = (pos.z - activeObj.position.z) * scale;
+        if (dx * dx + dz * dz < 52 * 52) {
+          rCtx.fillStyle = color;
+          rCtx.beginPath(); rCtx.arc(cx + dx, cy + dz, size, 0, Math.PI * 2); rCtx.fill();
+        }
+      }
+      plotBlip(portalGroup.position, '#00f3ff', 4.5);
+      plotBlip(solarStarGroup.position, '#ffaa00', 4.5);
+      plotBlip(mothershipGroup.position, '#00ff88', 4.5);
+      plotBlip(bossGroup.position, '#ff0044', 5);
+      for (let i = 0; i < enemies.length; i++) plotBlip(enemies[i].mesh.position, '#ff5500', 2.2);
+
+      rCtx.fillStyle = '#ffffff';
+      rCtx.beginPath(); rCtx.arc(cx, cy, 3, 0, Math.PI * 2); rCtx.fill();
+    }
+
+    // =========================================================================
+    // 12. STRICT ZERO-ALLOCATION DELTA-TIME (`dt`) PHYSICS & RENDER LOOP
+    // =========================================================================
+    let frameCount = 0;
+    let fpsAccum = 0;
+    let currentFps = 60;
+    let totalSimTime = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.1);
+      totalSimTime += dt;
+      frameCount++;
+      fpsAccum += dt;
+      if (fpsAccum >= 0.5) {
+        currentFps = Math.round(frameCount / fpsAccum);
+        frameCount = 0;
+        fpsAccum = 0;
+        document.getElementById('gpu-val').textContent =
+          `${currentFps} FPS | dt: ${(dt * 1000).toFixed(1)}ms | 0 Allocs/f`;
+      }
+
+      if (state.portalJumpCooldownSec > 0) {
+        state.portalJumpCooldownSec = Math.max(0, state.portalJumpCooldownSec - dt);
+      }
+
+      const activeObj = state.mothershipControl ? mothershipGroup : shipGroup;
+
+      // FIX 3: Dynamic Higgs Field Suppression & Effective Inertial Mass (m_eff)
+      const targetSuppression = state.bubbleActive ? 0.999999 : 0.0;
+      state.higgsSuppression += (targetSuppression - state.higgsSuppression) * Math.min(1.0, 6.0 * dt);
+      // Clamp floor so F / m_eff stays finite while resolving 0/0 photon-like state
+      state.effectiveMassKg = state.restMassKg * Math.max(0.08, 1.0 - state.higgsSuppression);
+      const dispMassKg = state.higgsSuppression > 0.99 ? 0.0 : state.effectiveMassKg;
+
+      // 1. 6-DOF Rotational Kinematics (Pitch: Arrows, Yaw: Arrows, Roll: Q/E)
+      const massRatio = state.restMassKg / state.effectiveMassKg; // Rises up to 12.5x as m_eff -> 0
+      const angAccel = 1.8 * Math.min(3.0, Math.sqrt(massRatio));
+      let pitchInput = (state.keys['arrowup'] ? 1 : 0) - (state.keys['arrowdown'] ? 1 : 0) + state.joyRight.y;
+      let yawInput = (state.keys['arrowleft'] ? 1 : 0) - (state.keys['arrowright'] ? 1 : 0) - state.joyRight.x;
+      let rollInput = (state.keys['q'] ? 1 : 0) - (state.keys['e'] ? 1 : 0);
+
+      if (state.mouseSteer) {
+        pitchInput += state.mouseY * 1.3;
+        yawInput -= state.mouseX * 1.3;
+      }
+
+      state.angularVel.x += pitchInput * angAccel * dt;
+      state.angularVel.y += yawInput * angAccel * dt;
+      state.angularVel.z += rollInput * angAccel * 1.4 * dt;
+
+      const rotDamp = Math.exp(-(state.inertialDampers ? 4.5 : 0.4) * dt);
+      state.angularVel.multiplyScalar(rotDamp);
+
+      activeObj.rotateX(state.angularVel.x * dt);
+      activeObj.rotateY(state.angularVel.y * dt);
+      activeObj.rotateZ(state.angularVel.z * dt);
+
+      // 2. FIX 7: Full 6-DOF Translational Axes (Surge W/S, Strafe A/D, Vertical Heave R/F)
+      _forward.set(0, 0, -1).applyQuaternion(activeObj.quaternion);
+      _right.set(1, 0, 0).applyQuaternion(activeObj.quaternion);
+      _up.set(0, 1, 0).applyQuaternion(activeObj.quaternion);
+
+      const surgeInput = (state.keys['w'] ? 1 : 0) - (state.keys['s'] ? 0.7 : 0) + state.joyLeft.y;
+      const strafeInput = (state.keys['d'] ? 1 : 0) - (state.keys['a'] ? 1 : 0) + state.joyLeft.x;
+      const heaveInput = (state.keys['r'] ? 1 : 0) - (state.keys['f'] ? 1 : 0); // Vertical translation!
+
+      // Acceleration a = F_rcs / m_eff
+      const linAccelMag = state.rcsForceN / state.effectiveMassKg;
+      _v1.set(0, 0, 0);
+      _v1.addScaledVector(_forward, surgeInput * linAccelMag);
+      _v1.addScaledVector(_right, strafeInput * linAccelMag * 0.75);
+      _v1.addScaledVector(_up, heaveInput * linAccelMag * 0.75);
+
+      // Add Keplerian Gravity when Higgs Coupled
+      computeGravityAccelInPlace(activeObj.position, _gAcc);
+      _v1.add(_gAcc);
+
+      // G-Force Telemetry (0.00G inside 0/0 Bubble; real G-load when Higgs coupled)
+      state.gLoad = (1.0 - state.higgsSuppression) * (_v1.length() / 9.81);
+
+      state.linearVel.addScaledVector(_v1, dt);
+      if (state.inertialDampers) {
+        state.linearVel.multiplyScalar(Math.exp(-1.15 * dt));
+      }
+
+      // FIX 2: Honest Local Frame Velocity vs. ADM Metric Contraction Streaming
+      const targetAdm = state.spacePuller ? 365000.0 : (state.bubbleActive ? 12.4 : 1.0);
+      state.admContractionFactor += (targetAdm - state.admContractionFactor) * Math.min(1.0, 4.0 * dt);
+
+      // Move ship in local coordinates
+      activeObj.position.addScaledVector(state.linearVel, dt);
+
+      // Stream starfield & cosmic objects opposite to forward vector during ADM Metric Contraction
+      const localSpeedMS = state.linearVel.length();
+      state.metricSpeedC = state.spacePuller
+        ? state.admContractionFactor * (1.0 + localSpeedMS / 500.0)
+        : (state.bubbleActive ? (localSpeedMS / 40.0) : (localSpeedMS / 299792458.0));
+
+      const starArr = starGeo.attributes.position.array;
+      const streamStep = state.spacePuller ? 1600 * dt : 0;
+      if (streamStep > 0) {
+        for (let i = 0; i < starCount * 3; i += 3) {
+          starArr[i] -= _forward.x * streamStep;
+          starArr[i + 1] -= _forward.y * streamStep;
+          starArr[i + 2] -= _forward.z * streamStep;
+          if (Math.abs(starArr[i + 2] - activeObj.position.z) > 4000) {
+            starArr[i + 2] = activeObj.position.z - 3800;
+          }
+        }
+        starGeo.attributes.position.needsUpdate = true;
+      }
+
+      // Animate 3D Cosmic Zone Geometries
+      if (state.systemIdx === 0) {
+        for (let i = 0; i < oortComets.length; i++) {
+          const c = oortComets[i];
+          c.position.z += (localSpeedMS * 0.6 + (state.spacePuller ? 450 : 25)) * dt;
+          if (c.position.z - oortGroup.position.z > 1200) c.position.z -= 2400;
+        }
+      } else if (state.systemIdx === 2) {
+        spiralGalaxyMesh.rotation.y += 0.18 * dt;
+      } else if (state.systemIdx === 3) {
+        cosmicWebLines.rotation.y += 0.06 * dt;
+      } else if (state.systemIdx === 4) {
+        for (let i = 0; i < bubbleUniverses.length; i++) {
+          bubbleUniverses[i].rotation.y += 0.35 * dt;
+        }
+      }
+
+      updateOrbitalTrajectoryLine(activeObj.position, state.linearVel);
+      updateSpacetimeMetricGrid(activeObj, _forward, totalSimTime);
+
+      // Emit Pooled Engine Thruster Particles (Zero Allocation)
+      _v2.set(0, -0.2, 6.5).applyQuaternion(activeObj.quaternion).add(activeObj.position);
+      emitPooledParticles(_v2, state.spacePuller ? 0.8 : 0.0, 0.95, 1.0, 2, 18, 0.35);
+
+      // 3. FIX 4: Phase-Shift Capacitor Drain & Tier-4 0.05s (50ms) Nanolattice Auto-Heal
+      if (state.phaseShift) {
+        state.capacitorEJ = Math.max(0, state.capacitorEJ - 6.0 * dt);
+        if (state.capacitorEJ <= 0) togglePhase(); // Collapses if capacitor empty
+      }
+      if (state.nanoHealTimerSec > 0) {
+        state.nanoHealTimerSec -= dt;
+        if (state.nanoHealTimerSec <= 0) {
+          state.hullIntegrity = Math.min(100, state.hullIntegrity + 8);
+          document.getElementById('nano-val').textContent = '0.05s Nanolattice Re-Bonded!';
+        }
+      }
+
+      // 4. Real 120.00s Armada Countdown & FIX 1 Single-Trigger Portal Entry
+      if (state.armadaSyncing) {
+        const timeRate = state.fastCountdown ? 10.0 : 1.0;
+        state.armadaCountdownSec = Math.max(0, state.armadaCountdownSec - dt * timeRate);
+        const tRem = state.armadaCountdownSec;
+        const cdBanner = document.getElementById('countdown-banner');
+
+        if (tRem > 60) {
+          if (!state.stageTriggered.s120) {
+            state.stageTriggered.s120 = true;
+            if (!state.wingmenActive) toggleWingmen();
+          }
+          cdBanner.textContent = `T - ${tRem.toFixed(2)}s [STAGE 1]: 240+ ESCORT SQUADRONS IN 3D SPHERICAL FORMATION`;
+        } else if (tRem > 30) {
+          if (!state.stageTriggered.s60) {
+            state.stageTriggered.s60 = true;
+            shuntPortalMass();
+          }
+          cdBanner.textContent = `T - ${tRem.toFixed(2)}s [STAGE 2]: PORTAL BLEEDING 10⁴ kg/s → 899 EW | THROAT 920m OPEN`;
+        } else if (tRem > 5) {
+          if (!state.stageTriggered.s30) {
+            state.stageTriggered.s30 = true;
+            goldenTether.material.opacity = 0.9;
+          }
+          const posArr = goldenTether.geometry.attributes.position.array;
+          posArr[0] = mothershipGroup.position.x; posArr[1] = mothershipGroup.position.y; posArr[2] = mothershipGroup.position.z;
+          posArr[3] = portalGroup.position.x; posArr[4] = portalGroup.position.y; posArr[5] = portalGroup.position.z;
+          goldenTether.geometry.attributes.position.needsUpdate = true;
+          cdBanner.textContent = `T - ${tRem.toFixed(2)}s [STAGE 3]: GOLDEN PLASMA TETHER COUPLED | WORMHOLE LOCK 100%`;
+        } else if (tRem > 0) {
+          cdBanner.textContent = `T - ${tRem.toFixed(2)}s [STAGE 4]: 12 MOTHERSHIP CORES AT 0.00 kg — JUMP IMMINENT!`;
+        } else {
+          completeArmadaJump();
+        }
+      }
+
+      if (state.portalJumpCooldownSec <= 0 && activeObj.position.distanceTo(portalGroup.position) < 92) {
+        completeArmadaJump();
+      }
+
+      // 5. Mothership 360° Turrets & Wingmen (Zero Allocation)
+      for (let t = 0; t < msTurrets.length; t++) {
+        const tur = msTurrets[t];
+        tur.cooldown -= dt;
+        let nearestEn = null;
+        let minDist = 850;
+        for (let e = 0; e < enemies.length; e++) {
+          const d = enemies[e].mesh.position.distanceTo(mothershipGroup.position);
+          if (d < minDist) { minDist = d; nearestEn = enemies[e]; }
+        }
+        if (nearestEn) {
+          tur.pivot.lookAt(nearestEn.mesh.position);
+          if (tur.cooldown <= 0) {
+            tur.cooldown = 1.1 + Math.random() * 0.5;
+            tur.pivot.getWorldPosition(_worldTurPos);
+            _v3.subVectors(nearestEn.mesh.position, _worldTurPos).normalize();
+            spawnPooledProjectile(_worldTurPos, _v3, 560, 0xffdd00, false, false);
+          }
+        }
+      }
+
+      if (state.wingmenActive) {
+        for (let i = 0; i < wingmen.length; i++) {
+          const w = wingmen[i];
+          w.angle += 1.6 * dt;
+          const r = 28 + (i % 2) * 12;
+          w.mesh.position.set(
+            activeObj.position.x + Math.cos(w.angle) * r,
+            activeObj.position.y + Math.sin(w.angle * 1.3) * 14,
+            activeObj.position.z + Math.sin(w.angle) * r
+          );
+          w.mesh.quaternion.copy(activeObj.quaternion);
+          w.cooldown -= dt;
+          if (w.cooldown <= 0) {
+            w.cooldown = 0.9 + Math.random() * 0.6;
+            for (let e = 0; e < enemies.length; e++) {
+              if (enemies[e].mesh.position.distanceTo(w.mesh.position) < 600) {
+                _v3.subVectors(enemies[e].mesh.position, w.mesh.position).normalize();
+                spawnPooledProjectile(w.mesh.position, _v3, 540, 0xbc13fe, false, false);
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // 6. Enemy AI State Machine (Zero Allocation)
+      for (let i = 0; i < enemies.length; i++) {
+        const en = enemies[i];
+        _v1.subVectors(activeObj.position, en.mesh.position);
+        const dist = _v1.length();
+        _v2.copy(_v1).normalize();
+
+        if (dist > 360) {
+          en.aiState = 'APPROACH';
+          _v3.copy(_v2).multiplyScalar(115);
+          en.vel.lerp(_v3, 2.5 * dt);
+        } else if (dist > 130) {
+          en.aiState = 'ORBIT_STRAFE';
+          _v3.set(-_v2.z * en.strafeDir, 0.15, _v2.x * en.strafeDir).normalize().multiplyScalar(95);
+          en.vel.lerp(_v3, 3.0 * dt);
+        } else {
+          en.aiState = 'EVADE';
+          _v3.copy(_v2).negate().multiplyScalar(130);
+          en.vel.lerp(_v3, 3.5 * dt);
+        }
+
+        en.mesh.position.addScaledVector(en.vel, dt);
+        en.mesh.rotation.x += 1.2 * dt;
+        en.mesh.rotation.y += 1.5 * dt;
+
+        en.fireCooldown -= dt;
+        if (en.fireCooldown <= 0 && dist < 680) {
+          en.fireCooldown = 2.2 + Math.random() * 1.5;
+          const timeToHit = dist / 380;
+          _v3.copy(activeObj.position).addScaledVector(state.linearVel, timeToHit * 0.5).sub(en.mesh.position).normalize();
+          spawnPooledProjectile(en.mesh.position, _v3, 380, 0xff0044, true, false);
+        }
+      }
+
+      bossGroup.lookAt(activeObj.position);
+      bossCooldownSec -= dt;
+      if (bossCooldownSec <= 0) {
+        bossCooldownSec = 2.8;
+        if (bossGroup.position.distanceTo(activeObj.position) < 1200) {
+          _v3.subVectors(activeObj.position, bossGroup.position).normalize();
+          spawnPooledProjectile(bossGroup.position, _v3, 440, 0xff3300, true, true);
+        }
+      }
+
+      // 7. Projectile Pool & FIX 4 Probabilistic 98% Phase-Shift Check
+      for (let i = 0; i < MAX_PROJECTILES; i++) {
+        const p = projectilePool[i];
+        if (p.life <= 0) continue;
+
+        p.mesh.position.addScaledVector(p.vel, dt);
+        p.life -= dt;
+        if (p.life <= 0) {
+          p.mesh.visible = false;
+          continue;
+        }
+
+        if (p.isHostile) {
+          if (p.mesh.position.distanceTo(activeObj.position) < 16) {
+            p.life = 0;
+            p.mesh.visible = false;
+            if (state.phaseShift) {
+              // FIX 4: Exact 98% Quantum Tunneling vs 2% Residual Quantum Phase-Shear Graze!
+              if (Math.random() < 0.98) {
+                state.tunneledCount++;
+                document.getElementById('nano-val').textContent = `98% Phase Tunneled (#${state.tunneledCount})`;
+                showAlert('98% QUANTUM PHASE-SHIFT: HOSTILE SHOT TUNNELED HARMLESSLY!', '#bc13fe');
+              } else {
+                state.shearGrazeCount++;
+                state.hullIntegrity = Math.max(20, state.hullIntegrity - 9);
+                state.nanoHealTimerSec = 0.05; // Trigger 50ms Tier-4 Nanolattice Self-Repair!
+                document.getElementById('nano-val').textContent = '2% Shear Graze! 0.05s Nano-Healing...';
+                showAlert('2% QUANTUM PHASE-SHEAR GRAZE! TIER-4 NANOLATTICE RE-BONDING IN 0.05s!', '#ff3366');
+              }
+            } else {
+              hexShieldMat.opacity = 0.9;
+              const recEJ = p.isPlasma ? 24 : 12;
+              state.capacitorEJ = Math.min(250, state.capacitorEJ + recEJ);
+              state.totalHarvestedEJ += recEJ;
+              state.hullIntegrity = Math.max(25, state.hullIntegrity - (p.isPlasma ? 8 : 3));
+              state.nanoHealTimerSec = 0.05;
+              emitPooledParticles(activeObj.position, 1.0, 0.75, 0.1, 16, 70, 0.5);
+              showAlert(`TIER-2 HEX COILS REDIRECTED 92% HOSTILE IMPACT (+${recEJ} EJ TO CAPACITOR!)`, '#00ff88');
+            }
+          }
+        } else {
+          for (let e = 0; e < enemies.length; e++) {
+            const en = enemies[e];
+            if (p.mesh.position.distanceTo(en.mesh.position) < (p.isPlasma ? 24 : 15)) {
+              p.life = 0;
+              p.mesh.visible = false;
+              emitPooledParticles(en.mesh.position, 1.0, 0.35, 0.0, 30, 110, 0.75);
+              respawnEnemy(en);
+              state.capacitorEJ = Math.min(250, state.capacitorEJ + 10);
+              state.totalHarvestedEJ += 10;
+              playTone(320, 90, 0.15, 'triangle');
+              showAlert('HOSTILE CRUISER VAPORIZED! +10 EJ HARVESTED', '#00ffcc');
+              break;
+            }
+          }
+          if (p.life > 0 && p.mesh.position.distanceTo(bossGroup.position) < 52) {
+            p.life = 0;
+            p.mesh.visible = false;
+            state.bossHull = Math.max(0, state.bossHull - (p.isPlasma ? 16 : 4));
+            emitPooledParticles(p.mesh.position, 0.8, 0.1, 1.0, 20, 90, 0.6);
+            if (state.bossHull <= 0) {
+              emitPooledParticles(bossGroup.position, 1.0, 0.2, 0.4, 90, 180, 1.2);
+              state.bossHull = 100;
+              bossGroup.position.z -= 900;
+              showAlert('HOSTILE CAPITAL DREADNOUGHT DESTROYED!', '#00ff88');
+            }
+          }
+        }
+      }
+
+      // 8. Update GPU Particle Buffer
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        if (partLifetimes[i] > 0) {
+          partLifetimes[i] -= dt;
+          if (partLifetimes[i] <= 0) {
+            partPositions[i * 3 + 1] = -99999;
+          } else {
+            partPositions[i * 3] += partVelocities[i].x * dt;
+            partPositions[i * 3 + 1] += partVelocities[i].y * dt;
+            partPositions[i * 3 + 2] += partVelocities[i].z * dt;
+          }
+        }
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
+
+      if (hexShieldMat.opacity > 0) {
+        hexShieldMat.opacity = Math.max(0, hexShieldMat.opacity - 1.8 * dt);
+        hexShieldMesh.rotation.y += 4.0 * dt;
+      }
+      isolationBubble.rotation.y += 1.4 * dt;
+      spacePullerCone.rotation.z -= 5.0 * dt;
+      innerCasimirRing.rotation.z -= 2.2 * dt;
+      wormholeFunnelMesh.rotation.z += 1.2 * dt;
+
+      state.capacitorEJ = Math.min(250, state.capacitorEJ + 4.5 * dt);
+      state.schStability = Math.min(100, state.schStability + 1.8 * dt);
+
+      // 9. Zero-Allocation Smooth Chase Camera
+      _v1.set(0, state.mothershipControl ? 35 : 10, state.mothershipControl ? 110 : 38)
+         .applyQuaternion(activeObj.quaternion)
+         .add(activeObj.position);
+      camera.position.lerp(_v1, 1 - Math.exp(-8.0 * dt));
+
+      _v2.copy(activeObj.position).addScaledVector(_forward, 80);
+      camera.lookAt(_v2);
+
+      if (state.shakeIntensity > 0.05) {
+        camera.position.x += (Math.random() - 0.5) * state.shakeIntensity;
+        camera.position.y += (Math.random() - 0.5) * state.shakeIntensity;
+        state.shakeIntensity *= Math.exp(-7.0 * dt);
+      }
+
+      // 10. Refresh Audited Telemetry HUD
+      drawTacticalRadar(activeObj);
+      document.getElementById('mass-val').textContent = dispMassKg === 0
+        ? `0.00 kg (0/0 Higgs Decoupled)`
+        : `${dispMassKg.toExponential(2)} kg`;
+      document.getElementById('mass-val').className = dispMassKg === 0 ? 'val' : 'val warn';
+
+      document.getElementById('local-speed-val').textContent =
+        `${localSpeedMS.toFixed(1)} m/s (${state.gLoad.toFixed(2)}G Load)`;
+      document.getElementById('metric-speed-val').textContent = state.spacePuller
+        ? `${Math.round(state.metricSpeedC).toLocaleString()} c (ADM Contracted)`
+        : `${state.metricSpeedC.toFixed(4)} c (Sub-Warp)`;
+
+      document.getElementById('eq-1').textContent =
+        `m_eff = ${dispMassKg.toExponential(2)} kg | a_max = ${(state.rcsForceN / state.effectiveMassKg).toFixed(0)} m/s²`;
+      document.getElementById('eq-2').textContent =
+        `Λ_ADM = ${state.admContractionFactor.toFixed(1)}x | v_eff = ${state.metricSpeedC.toFixed(2)} c`;
+      document.getElementById('eq-3').textContent =
+        `b(r₀) = 460m | Cooldown: ${state.portalJumpCooldownSec > 0 ? state.portalJumpCooldownSec.toFixed(1) + 's' : 'Ready'}`;
+      document.getElementById('eq-4').textContent =
+        `98% Tunneled: ${state.tunneledCount} | 2% Shear Grazes: ${state.shearGrazeCount}`;
+
+      document.getElementById('cap-text').textContent = `${Math.round(state.capacitorEJ)} EJ`;
+      document.getElementById('cap-bar').style.width = `${(state.capacitorEJ / 250) * 100}%`;
+      document.getElementById('conduit-text').textContent = `${Math.round(state.conduitIntegrity)}%`;
+      document.getElementById('conduit-bar').style.width = `${state.conduitIntegrity}%`;
+      document.getElementById('boss-text').textContent = `${Math.round(state.bossHull)}%`;
+      document.getElementById('boss-bar').style.width = `${state.bossHull}%`;
+      document.getElementById('sch-text').textContent = `${Math.round(state.schStability)}%`;
+      document.getElementById('sch-bar').style.width = `${state.schStability}%`;
+      document.getElementById('hull-text').textContent = `${Math.round(state.hullIntegrity)}%`;
+      document.getElementById('hull-bar').style.width = `${state.hullIntegrity}%`;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

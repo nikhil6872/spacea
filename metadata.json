@@ -1,0 +1,6 @@
+{
+  "name": "FTL: 6-DOF Relativistic Physics & 5-Cosmic Zone Simulator",
+  "description": "True 6-DOF Newtonian and ADM relativistic physics simulator with zero-allocation Three.js rendering, Higgs mass-nullification, Morris-Thorne wormhole transit, and five cosmic scale environments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
